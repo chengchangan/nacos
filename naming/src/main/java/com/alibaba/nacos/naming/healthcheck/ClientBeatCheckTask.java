@@ -37,6 +37,10 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 
 /**
+ *
+ * 检查服务是否有效
+ *
+ *
  * Check and update statues of ephemeral instances, remove them if they have been expired.
  *
  * @author nkorange
@@ -86,6 +90,7 @@ public class ClientBeatCheckTask implements Runnable {
 
             // first set health status of instances:
             for (Instance instance : instances) {
+                // nacos节点
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getInstanceHeartBeatTimeOut()) {
                     if (!instance.isMarked()) {
                         if (instance.isHealthy()) {

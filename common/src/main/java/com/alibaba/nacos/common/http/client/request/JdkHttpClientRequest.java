@@ -72,6 +72,14 @@ public class JdkHttpClientRequest implements HttpClientRequest {
         }
     }
 
+    /**
+     * 使用 JDK 自带的 java.net 包下 HttpURLConnection等类库进行http/https调用
+     *
+     * RequestHttpEntity：自定义的 request请求的信息封装
+     *  执行请求 。。。
+     * JdkHttpClientResponse：自定义 response 相应结果的解析和处理
+     *
+     */
     @Override
     public HttpClientResponse execute(URI uri, String httpMethod, RequestHttpEntity requestHttpEntity)
         throws Exception {

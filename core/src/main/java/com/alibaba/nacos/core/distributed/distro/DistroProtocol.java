@@ -19,11 +19,7 @@ package com.alibaba.nacos.core.distributed.distro;
 import com.alibaba.nacos.consistency.DataOperation;
 import com.alibaba.nacos.core.cluster.Member;
 import com.alibaba.nacos.core.cluster.ServerMemberManager;
-import com.alibaba.nacos.core.distributed.distro.component.DistroCallback;
-import com.alibaba.nacos.core.distributed.distro.component.DistroComponentHolder;
-import com.alibaba.nacos.core.distributed.distro.component.DistroDataProcessor;
-import com.alibaba.nacos.core.distributed.distro.component.DistroDataStorage;
-import com.alibaba.nacos.core.distributed.distro.component.DistroTransportAgent;
+import com.alibaba.nacos.core.distributed.distro.component.*;
 import com.alibaba.nacos.core.distributed.distro.entity.DistroData;
 import com.alibaba.nacos.core.distributed.distro.entity.DistroKey;
 import com.alibaba.nacos.core.distributed.distro.task.DistroTaskEngineHolder;
@@ -33,6 +29,10 @@ import com.alibaba.nacos.core.distributed.distro.task.verify.DistroVerifyTask;
 import com.alibaba.nacos.core.utils.GlobalExecutor;
 import com.alibaba.nacos.core.utils.Loggers;
 import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 
 /**
  * Distro protocol.
@@ -101,9 +101,11 @@ public class DistroProtocol {
      */
     public void sync(DistroKey distroKey, DataOperation action, long delay) {
         for (Member each : memberManager.allMembersWithoutSelf()) {
+            // 封装 同步目标 remote server 需要的信息
             DistroKey distroKeyWithTarget = new DistroKey(distroKey.getResourceKey(), distroKey.getResourceType(),
                 each.getAddress());
             DistroDelayTask distroDelayTask = new DistroDelayTask(distroKeyWithTarget, action, delay);
+            // 将需要同步的信息 构建成一个 Task
             distroTaskEngineHolder.getDelayTaskExecuteEngine().addTask(distroKeyWithTarget, distroDelayTask);
             if (Loggers.DISTRO.isDebugEnabled()) {
                 Loggers.DISTRO.debug("[DISTRO-SCHEDULE] {} to {}", distroKey, each.getAddress());

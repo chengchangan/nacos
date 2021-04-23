@@ -96,6 +96,8 @@ public class SecurityProxy {
     }
 
     /**
+     * 登陆　Nacos Server 刷新最后登陆时间
+     *
      * Login to servers.
      *
      * @param servers server list
@@ -110,6 +112,7 @@ public class SecurityProxy {
             }
 
             for (String server : servers) {
+                // 关键逻辑：登陆
                 if (login(server)) {
                     lastRefreshTime = System.currentTimeMillis();
                     return true;
@@ -122,6 +125,10 @@ public class SecurityProxy {
     }
 
     /**
+     * 具体的登陆逻辑
+     *  1、发起登陆
+     *  2、刷新token 和 tokenTtl
+     *
      * Login to server.
      *
      * @param server server address

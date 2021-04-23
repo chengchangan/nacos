@@ -52,6 +52,10 @@ public class BeatReactor implements Closeable {
 
     private boolean lightBeatEnabled = false;
 
+    /**
+     * 存放当前心跳检测的信息
+     * 方便服务的停止，（先要拿出来，然后设置stop）
+     */
     public final Map<String, BeatInfo> dom2Beat = new ConcurrentHashMap<String, BeatInfo>();
 
     public BeatReactor(NamingProxy serverProxy) {
@@ -72,6 +76,10 @@ public class BeatReactor implements Closeable {
     }
 
     /**
+     * 说明：
+     *      1、添加定时心跳检测
+     *      2、如果存在删除且停止，再进行添加
+     *
      * Add beat information.
      *
      * @param serviceName service name
@@ -91,6 +99,8 @@ public class BeatReactor implements Closeable {
     }
 
     /**
+     * 删除且停止心跳
+     *
      * Remove beat information.
      *
      * @param serviceName service name
@@ -118,6 +128,8 @@ public class BeatReactor implements Closeable {
     }
 
     /**
+     * 构建心跳检测信息
+     *
      * Build new beat information.
      *
      * @param groupedServiceName service name with group name, format: ${groupName}@@${serviceName}
@@ -149,6 +161,13 @@ public class BeatReactor implements Closeable {
         NAMING_LOGGER.info("{} do shutdown stop", className);
     }
 
+    /**
+     * 心跳检测任务
+     *
+     * 定时周期性的发送心跳，默认每 5s 一次
+     * 如果发送心跳的服务不存在，则注册服务，再进行发送心跳
+     *
+     */
     class BeatTask implements Runnable {
 
         BeatInfo beatInfo;
@@ -164,6 +183,7 @@ public class BeatReactor implements Closeable {
             }
             long nextTime = beatInfo.getPeriod();
             try {
+                // 关键逻辑：发送心跳任务
                 JsonNode result = serverProxy.sendBeat(beatInfo, BeatReactor.this.lightBeatEnabled);
                 long interval = result.get("clientBeatInterval").asLong();
                 boolean lightBeatEnabled = false;
@@ -178,6 +198,7 @@ public class BeatReactor implements Closeable {
                 if (result.has(CommonParams.CODE)) {
                     code = result.get(CommonParams.CODE).asInt();
                 }
+                // 关键逻辑：如果心跳对应的服务不存在，则注册服务，再进行发送心跳任务
                 if (code == NamingResponseCode.RESOURCE_NOT_FOUND) {
                     Instance instance = new Instance();
                     instance.setPort(beatInfo.getPort());
@@ -199,6 +220,7 @@ public class BeatReactor implements Closeable {
                     JacksonUtils.toJson(beatInfo), ex.getErrCode(), ex.getErrMsg());
 
             }
+            // 关键逻辑：定时触发下一次发送心跳的时间
             executorService.schedule(new BeatTask(beatInfo), nextTime, TimeUnit.MILLISECONDS);
         }
     }

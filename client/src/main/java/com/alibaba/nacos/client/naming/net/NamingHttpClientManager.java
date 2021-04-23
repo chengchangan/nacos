@@ -79,6 +79,14 @@ public class NamingHttpClientManager implements Closeable {
         NAMING_LOGGER.warn("[NamingHttpClientManager] Destruction of the end");
     }
 
+
+    /**
+     * HttpClientFactory                            顶层接口
+     *      AbstractHttpClientFactory               抽象实现 ----> 具体实现创建 httpRestTemplate 过程
+     *                                                      ----> 抽象出创建Template时所需的配置信息
+     *          NamingHttpClientFactory             具体实现 ----> 具体实现配置信息的获取
+     *
+     */
     private static class NamingHttpClientFactory extends AbstractHttpClientFactory {
 
         @Override

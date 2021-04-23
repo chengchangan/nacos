@@ -43,9 +43,15 @@ import java.security.NoSuchAlgorithmException;
  */
 public abstract class AbstractHttpClientFactory implements HttpClientFactory {
 
+    /**
+     * 1、获取各自不同的工厂定义的配置信息
+     * 2、使用JDK 自带的java.net包下的 HttpURLConnection 等相关类库进行http（包括SSL）调用，
+     * 3、封装大量的模板方法，最终都是调用 Request的execute()
+     */
     @Override
     public NacosRestTemplate createNacosRestTemplate() {
         HttpClientConfig httpClientConfig = buildHttpClientConfig();
+        // 关键逻辑： Http发起请求的过程
         final JdkHttpClientRequest clientRequest = new JdkHttpClientRequest(httpClientConfig);
 
         // enable ssl
@@ -61,7 +67,7 @@ public abstract class AbstractHttpClientFactory implements HttpClientFactory {
                 clientRequest.setSSLContext(loadSSLContext());
             }
         });
-
+        // 关键逻辑： 模板方法封装 和 响应结果处理的过程
         return new NacosRestTemplate(assignLogger(), clientRequest);
     }
 

@@ -35,10 +35,21 @@ public final class HttpClientBeanHolder {
     private static final Map<String, NacosAsyncRestTemplate> SINGLETON_ASYNC_REST = new HashMap<String, NacosAsyncRestTemplate>(
         10);
 
+    /**
+     * 使用默认工厂创建
+     *
+     */
     public static NacosRestTemplate getNacosRestTemplate(Logger logger) {
         return getNacosRestTemplate(new DefaultHttpClientFactory(logger));
     }
 
+    /**
+     * 说明：
+     *  1、获取 RestTemplate 使用【双重检查锁】
+     *  2、将每一种类型的工厂 和 创建出来的 template使用 Map进行缓存起来了
+     *  3、不同的 Factory 有不同的配置信息，从而创建的 template不一样，其实过程大部分一样
+     *
+     */
     public static NacosRestTemplate getNacosRestTemplate(HttpClientFactory httpClientFactory) {
         if (httpClientFactory == null) {
             throw new NullPointerException("httpClientFactory is null");
@@ -51,6 +62,7 @@ public final class HttpClientBeanHolder {
                 if (nacosRestTemplate != null) {
                     return nacosRestTemplate;
                 }
+                // 关键逻辑:  RestTemplate 的 创建
                 nacosRestTemplate = httpClientFactory.createNacosRestTemplate();
                 SINGLETON_REST.put(factoryName, nacosRestTemplate);
             }

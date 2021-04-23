@@ -48,6 +48,11 @@ import java.util.concurrent.TimeUnit;
 import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 
 /**
+ * 1、远程Server故障，本地服务信息的备份和还原
+ * 2、远程服务信息的本地缓存的处理，及维护
+ * 3、接收远程服务的信息推送 和 更新本地缓存信息
+ *
+ *
  * Host reactor.
  *
  * @author xuanyin
@@ -60,6 +65,9 @@ public class HostReactor implements Closeable {
 
     private final Map<String, ScheduledFuture<?>> futureMap = new HashMap<String, ScheduledFuture<?>>();
 
+    /**
+     * 存储服务的信息
+     */
     private final Map<String, ServiceInfo> serviceInfoMap;
 
     private final Map<String, Object> updatingMap;
@@ -98,15 +106,20 @@ public class HostReactor implements Closeable {
         this.eventDispatcher = eventDispatcher;
         this.beatReactor = beatReactor;
         this.serverProxy = serverProxy;
+        // 缓存的目录
         this.cacheDir = cacheDir;
+        // 启动时是否从本地缓存中读取信息进行初始化
         if (loadCacheAtStart) {
             this.serviceInfoMap = new ConcurrentHashMap<String, ServiceInfo>(DiskCache.read(this.cacheDir));
         } else {
             this.serviceInfoMap = new ConcurrentHashMap<String, ServiceInfo>(16);
         }
-
+        // 并发获取远程服务时，类似锁的开关的作用，详情见：本类的方法：getServiceInfo()
         this.updatingMap = new ConcurrentHashMap<String, Object>();
+        // 服务信息备份和还原。（备份：将serviceInfoMap中的信息定时写到本地文件，
+        //                   还原：定时检测是否存在故障，如果产生则将本地文件信息读取解析，设置到serviceInfoMap中）
         this.failoverReactor = new FailoverReactor(this, cacheDir);
+        // 接收远程推送来的服务信息，保存、并返回处理结果给对方（Server端）
         this.pushReceiver = new PushReceiver(this);
     }
 
@@ -119,6 +132,13 @@ public class HostReactor implements Closeable {
     }
 
     /**
+     * 关键逻辑：
+     *      1、保存ServiceInfo（覆盖原有信息）
+     *      2、发送ServiceInfo改变事件，待后续 --> EventDispatcher 来处理
+     *      3、刷新本地备份信息（FailoverReactor）
+     *      4、然后返回最新的ServiceInfo信息
+     *
+     *
      * Process service json.
      *
      * @param json service json
@@ -135,6 +155,7 @@ public class HostReactor implements Closeable {
         boolean changed = false;
 
         if (oldService != null) {
+            // 关键逻辑：比较传入的 serviceInfo 和 原本存在的  服务的实例是否发生改变
 
             if (oldService.getLastRefTime() > serviceInfo.getLastRefTime()) {
                 NAMING_LOGGER.warn("out of date data received, old-t: " + oldService.getLastRefTime() + ", new-t: "
@@ -213,6 +234,7 @@ public class HostReactor implements Closeable {
             }
 
         } else {
+            //关键逻辑：如果是新的服务（ServiceInfo），直接添加
             changed = true;
             NAMING_LOGGER.info("init new ips(" + serviceInfo.ipCount() + ") service: " + serviceInfo.getKey() + " -> "
                 + JacksonUtils.toJson(serviceInfo.getHosts()));
@@ -232,6 +254,9 @@ public class HostReactor implements Closeable {
         return serviceInfo;
     }
 
+    /**
+     * 使用最新的Instance 来更新心跳检测的信息
+     */
     private void updateBeatInfo(Set<Instance> modHosts) {
         for (Instance instance : modHosts) {
             String key = beatReactor.buildKey(instance.getServiceName(), instance.getIp(), instance.getPort());
@@ -249,6 +274,11 @@ public class HostReactor implements Closeable {
         return serviceInfoMap.get(key);
     }
 
+    /**
+     * 获取ServiceInfo信息
+     *
+     * 直接从Server端获取 ServiceInfo信息
+     */
     public ServiceInfo getServiceInfoDirectlyFromServer(final String serviceName, final String clusters)
         throws NacosException {
         String result = serverProxy.queryList(serviceName, clusters, 0, false);
@@ -258,10 +288,24 @@ public class HostReactor implements Closeable {
         return null;
     }
 
+    /**
+     * 获取ServiceInfo信息
+     * 关键逻辑:
+     *  1、判断是否故障发生，从备份信息里取
+     *  2、然后从本地缓存取ServiceInfo
+     *  3、本地缓存没有，从远程Server端获取ServiceInfo信息，放到本地缓存
+     *
+     * 关键逻辑
+     *      【骚操作】：
+     *          在多线程环境下，并发获取同一个服务信息，只有第一个线程去远程Server端获取ServiceInfo信息
+     *          其他线程在等待，直到等待时间到期 或者 第一个线程执行完远程的ServiceInfo方法，调用了 --> notifyAll()
+     *          然后其他线程在本地进行获取ServiceInfo，
+     */
     public ServiceInfo getServiceInfo(final String serviceName, final String clusters) {
 
         NAMING_LOGGER.debug("failover-mode: " + failoverReactor.isFailoverSwitch());
         String key = ServiceInfo.getKey(serviceName, clusters);
+        // 关键逻辑：如果是故障模式，直接从备份文件中取
         if (failoverReactor.isFailoverSwitch()) {
             return failoverReactor.getService(key);
         }
@@ -269,16 +313,19 @@ public class HostReactor implements Closeable {
         ServiceInfo serviceObj = getServiceInfo0(serviceName, clusters);
 
         if (null == serviceObj) {
+            // 关键逻辑：如果本地缓存没有，则从远程Server端查询。
             serviceObj = new ServiceInfo(serviceName, clusters);
 
             serviceInfoMap.put(serviceObj.getKey(), serviceObj);
 
+            // 关键逻辑：在多线程环境下，只有第一个线程会去获取远程的ServiceInfo信息，updatingMap相当于一个开关
             updatingMap.put(serviceName, new Object());
             updateServiceNow(serviceName, clusters);
             updatingMap.remove(serviceName);
 
         } else if (updatingMap.containsKey(serviceName)) {
-
+            // 关键逻辑:
+            //  多线程获取 同一个服务信息的时候，第一个线程去远程获取，其他线程处于等待状态。updatingMap.containsKey() == True 说明有一个线程去远程取了
             if (UPDATE_HOLD_INTERVAL > 0) {
                 // hold a moment waiting for update finish
                 synchronized (serviceObj) {
@@ -291,7 +338,7 @@ public class HostReactor implements Closeable {
                 }
             }
         }
-
+        // 添加服务的定时调度任务(更新本地缓存信息)
         scheduleUpdateIfAbsent(serviceName, clusters);
 
         return serviceInfoMap.get(serviceObj.getKey());
@@ -306,6 +353,8 @@ public class HostReactor implements Closeable {
     }
 
     /**
+     * 为每个服务添加一个定时调度任务,用来更新ServiceInfo的信息
+     *
      * Schedule update if absent.
      *
      * @param serviceName service name
@@ -327,6 +376,8 @@ public class HostReactor implements Closeable {
     }
 
     /**
+     * 更新本地缓存的ServiceInfo信息
+     *
      * Update service now.
      *
      * @param serviceName service name
@@ -374,6 +425,12 @@ public class HostReactor implements Closeable {
         NAMING_LOGGER.info("{} do shutdown stop", className);
     }
 
+    /**
+     * 定时刷新ServiceInfo
+     *   正常情况下是 1s刷新一次,最大不会超过60s
+     *
+     *
+     */
     public class UpdateTask implements Runnable {
 
         long lastRefTime = Long.MAX_VALUE;

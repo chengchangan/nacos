@@ -64,21 +64,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 
 /**
+ * 说明：
+ *      1、此类封装了 Client端的 对服务的 增删改查功能
+ *      2、还提供的登录安全验证功能
+ *
+ *
  * Naming proxy.
  *
  * @author nkorange
  */
 public class NamingProxy implements Closeable {
-
+    /**
+     * 说明：
+     *  1、单利manager，实现方式：私有内部内，装有静态方法
+     *  2、然后获取 HttpTemplate，（内部是有缓存Template的。只是在第一次使用时创建）
+     *
+     */
     private final NacosRestTemplate nacosRestTemplate = NamingHttpClientManager.getInstance().getNacosRestTemplate();
 
     private static final int DEFAULT_SERVER_PORT = 8848;
@@ -87,10 +93,19 @@ public class NamingProxy implements Closeable {
 
     private final String namespaceId;
 
+    /**
+     * nacos 集群中其中一个 实例 IP:Port
+     */
     private final String endpoint;
 
     private String nacosDomain;
 
+    /**
+     *　配置文件配置的
+     *  nacos:
+     *      discovery:
+     *         server-addr: ip:port
+     */
     private List<String> serverList;
 
     private List<String> serversFromEndpoint = new ArrayList<String>();
@@ -108,7 +123,7 @@ public class NamingProxy implements Closeable {
     private ScheduledExecutorService executorService;
 
     public NamingProxy(String namespaceId, String endpoint, String serverList, Properties properties) {
-
+        // 登陆、校验过期时间等
         this.securityProxy = new SecurityProxy(properties, nacosRestTemplate);
         this.properties = properties;
         this.setServerPort(DEFAULT_SERVER_PORT);
@@ -120,9 +135,16 @@ public class NamingProxy implements Closeable {
                 this.nacosDomain = serverList;
             }
         }
+        // 关键逻辑： 定时刷新【服务端实例IP列表】和【登陆信息】
         this.initRefreshTask();
     }
 
+    /**
+     *
+     * 1、定时刷新 Nacos Server 集群的实例列表
+     * 2、定时刷新登陆信息
+     *
+     */
     private void initRefreshTask() {
 
         this.executorService = new ScheduledThreadPoolExecutor(2, new ThreadFactory() {
@@ -135,6 +157,7 @@ public class NamingProxy implements Closeable {
             }
         });
 
+        // 定时获取最新的 Nacos 集群Server 节点的地址信息
         this.executorService.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
@@ -142,6 +165,7 @@ public class NamingProxy implements Closeable {
             }
         }, 0, vipSrvRefInterMillis, TimeUnit.MILLISECONDS);
 
+        // 定时登陆，刷新最后登陆时间
         this.executorService.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
@@ -149,10 +173,15 @@ public class NamingProxy implements Closeable {
             }
         }, 0, securityInfoRefreshIntervalMills, TimeUnit.MILLISECONDS);
 
+        // todo 疑问：都开启了定时调度任务，为啥这里还要调用一次呢
         refreshSrvIfNeed();
         this.securityProxy.login(getServerList());
     }
 
+    /**
+     * 从 Nacos 集群中的一个终端，获取整个 Nacos集群可用实例IP:Port列表
+     *
+     */
     public List<String> getServerListFromEndpoint() {
 
         try {
@@ -181,6 +210,13 @@ public class NamingProxy implements Closeable {
         return null;
     }
 
+    /**
+     * 关键逻辑：
+     *      获取注册中心IP列表（就是获取 nacos集群实例IP列表）
+     *  1、覆盖本地的注册中心IP列表
+     *  2、刷新最后更新时间
+     *
+     */
     private void refreshSrvIfNeed() {
         try {
 
@@ -211,6 +247,10 @@ public class NamingProxy implements Closeable {
     }
 
     /**
+     *
+     * 注册一个服务实例 到 Nacos集群上
+     *
+     *
      * register a instance to service with specified instance properties.
      *
      * @param serviceName name of service
@@ -236,11 +276,15 @@ public class NamingProxy implements Closeable {
         params.put("ephemeral", String.valueOf(instance.isEphemeral()));
         params.put("metadata", JacksonUtils.toJson(instance.getMetadata()));
 
+        // 关键逻辑：将服务实例注册到 Nacos集群的其中一个实例上面（ 感觉很奇怪）
         reqApi(UtilAndComs.nacosUrlInstance, params, HttpMethod.POST);
 
     }
 
     /**
+     * 注销一个服务
+     *
+     *
      * deregister instance from a service.
      *
      * @param serviceName name of service
@@ -265,6 +309,9 @@ public class NamingProxy implements Closeable {
     }
 
     /**
+     *
+     * 更新一个服务
+     *
      * Update instance to service.
      *
      * @param serviceName service name
@@ -292,6 +339,8 @@ public class NamingProxy implements Closeable {
     }
 
     /**
+     * 查询服务信息
+     *
      * Query Service.
      *
      * @param serviceName service name
@@ -401,6 +450,11 @@ public class NamingProxy implements Closeable {
     }
 
     /**
+     *
+     * 关键逻辑：
+     *      发送心跳检测
+     *
+     *
      * Send beat.
      *
      * @param beatInfo         beat info
@@ -428,6 +482,8 @@ public class NamingProxy implements Closeable {
     }
 
     /**
+     * 检查服务是否健康
+     *
      * Check Server healthy.
      *
      * @return true if server is healthy
@@ -486,12 +542,24 @@ public class NamingProxy implements Closeable {
         return reqApi(api, params, Collections.EMPTY_MAP, method);
     }
 
+    /**
+     * 每一个Api 都作用在 Nacos集群的每一台机器上
+     *
+     */
     public String reqApi(String api, Map<String, String> params, Map<String, String> body, String method)
         throws NacosException {
+        //　将请求发送给每一个 Nacos Server 实例
         return reqApi(api, params, body, getServerList(), method);
     }
 
     /**
+     *
+     * 关键逻辑：
+     *      Nacos Client  ---->  Nacos Server
+     *  如果 Nacos server 集群版，则随机挑选其中一个 Server进行请求，如果失败，则延用上次调用的顺序，往下取一个server进行调用，成功一个Server就算成功，全失败抛出异常
+     *  如果 Nacos server 单机版，则调用这一个Server节点，如果失败，则重试三次
+     *
+     *
      * Request api.
      *
      * @param api     api
@@ -506,18 +574,19 @@ public class NamingProxy implements Closeable {
                          String method) throws NacosException {
 
         params.put(CommonParams.NAMESPACE_ID, getNamespaceId());
-
+        // 校验是否 Nacos server 实例 是否存在
         if (CollectionUtils.isEmpty(servers) && StringUtils.isEmpty(nacosDomain)) {
             throw new NacosException(NacosException.INVALID_PARAM, "no server available");
         }
 
         NacosException exception = new NacosException();
 
+        // 集群版
         if (servers != null && !servers.isEmpty()) {
 
             Random random = new Random(System.currentTimeMillis());
             int index = random.nextInt(servers.size());
-
+            // 随机挑选一台节点进行调用,如果失败了,则顺序往后面的节点进行重试
             for (int i = 0; i < servers.size(); i++) {
                 String server = servers.get(index);
                 try {
@@ -532,7 +601,9 @@ public class NamingProxy implements Closeable {
             }
         }
 
+        // 单机版
         if (StringUtils.isNotBlank(nacosDomain)) {
+            // 单机版  失败了,默认情况重试3次
             for (int i = 0; i < UtilAndComs.REQUEST_DOMAIN_RETRY_COUNT; i++) {
                 try {
                     return callServer(api, params, body, nacosDomain, method);
@@ -553,6 +624,13 @@ public class NamingProxy implements Closeable {
 
     }
 
+    /**
+     * 获取 Nacos Server 实例列表
+     * 关键逻辑：
+     *  优先取 endPoint  --------->    endPoint 是 Nacos集群中的一个终端，通过一个终端，获取整个Nacos 集群的实例列表
+     *  其次取 server-addr
+     *
+     */
     private List<String> getServerList() {
         List<String> snapshot = serversFromEndpoint;
         if (!CollectionUtils.isEmpty(serverList)) {
@@ -567,6 +645,13 @@ public class NamingProxy implements Closeable {
     }
 
     /**
+     *
+     * 说明：
+     *  设置安全信息
+     *  发起请求
+     *  监控信息
+     *
+     *
      * Call server.
      *
      * @param api       api
@@ -598,7 +683,7 @@ public class NamingProxy implements Closeable {
             HttpRestResult<String> restResult = nacosRestTemplate
                 .exchangeForm(url, header, Query.newInstance().initParams(params), body, method, String.class);
             end = System.currentTimeMillis();
-
+            // todo 监控信息，还没有了解过这个
             MetricsMonitor.getNamingRequestMonitor(method, url, String.valueOf(restResult.getCode()))
                 .observe(end - start);
 
@@ -615,6 +700,11 @@ public class NamingProxy implements Closeable {
         }
     }
 
+    /**
+     *
+     * 为请求设置安全校验信息
+     *
+     */
     private void injectSecurityInfo(Map<String, String> params) {
 
         // Inject token if exist:

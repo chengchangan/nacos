@@ -63,6 +63,11 @@ public abstract class AbstractNacosRestTemplate {
     }
 
     /**
+     *
+     * 1、构造器执行时，将响应处理器封装到Map中，同时也可以支持往里面注册
+     * 2、根据类型获取响应处理器
+     *
+     *
      * Select a response handler by responseType.
      *
      * @param responseType responseType

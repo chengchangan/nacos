@@ -272,6 +272,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         for (Map.Entry<String, List<Instance>> entry : ipMap.entrySet()) {
             //make every ip mine
             List<Instance> entryIPs = entry.getValue();
+            // 更新 服务（service）的每一个集群中的 实例（instance）信息列表
             clusterMap.get(entry.getKey()).updateIps(entryIPs, ephemeral);
         }
 
@@ -292,6 +293,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
      * Init service.
      */
     public void init() {
+         // 服务各个实例定时健康检查
         HealthCheckReactor.scheduleCheck(clientBeatCheckTask);
         for (Map.Entry<String, Cluster> entry : clusterMap.entrySet()) {
             entry.getValue().setService(this);
@@ -341,6 +343,12 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
     }
 
     /**
+     * 说明:
+     *  1、同一个服务，可能有多个实例（服务节点）
+     *  2、这些实例将会组成一个集群
+     *  3、此处 allIPs 代表，一个服务下有多少个节点（实例instance）
+     *      ephemeral = true 表示临时节点，false：表示一致性节点
+     *
      * Get all instance of ephemeral or consistency.
      *
      * @param ephemeral whether ephemeral instance

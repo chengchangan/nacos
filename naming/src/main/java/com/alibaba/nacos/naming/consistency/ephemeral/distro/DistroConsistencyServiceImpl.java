@@ -83,6 +83,13 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
 
     private volatile Notifier notifier = new Notifier();
 
+    /**
+     * key：buildInstanceListKey -> prefix +　是否临时　+ nameSpace + ## + serviceName
+     *
+     * value:
+     *      包含：Service　因为实现了　RecordListener接口
+     *
+     */
     private Map<String, ConcurrentLinkedQueue<RecordListener>> listeners = new ConcurrentHashMap<>();
 
     private Map<String, String> syncChecksumTasks = new ConcurrentHashMap<>(16);
@@ -104,7 +111,11 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
 
     @Override
     public void put(String key, Record value) throws NacosException {
+        // 将数据放入dataStore，然后添加了一个通知 --> （更新服务服务内的信息）
         onPut(key, value);
+
+        // Start to sync data to all remote server.
+        // 将服务的信息，同步给 nacos集群的其他节点（这就涉及到数据一致性的问题）
         distroProtocol.sync(new DistroKey(key, KeyBuilder.INSTANCE_LIST_KEY_PREFIX), DataOperation.CHANGE,
             globalConfig.getTaskDispatchPeriod() / 2);
     }
@@ -121,6 +132,10 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     }
 
     /**
+     *
+     * 1、将最新的数据放入 dataStore（感觉就像是一个本地缓存）
+     * 2、然后发起通知，根据存入的 dataStore更新 服务（service）和集群（cluster）的信息
+     *
      * Put a new record.
      *
      * @param key   key of record
@@ -139,7 +154,9 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         if (!listeners.containsKey(key)) {
             return;
         }
-
+        // 关键逻辑：
+        //      这个通知干了什么事？
+        //      数据更新的本地的 dataStore，然后在更新服务内的信息
         notifier.addTask(key, DataOperation.CHANGE);
     }
 

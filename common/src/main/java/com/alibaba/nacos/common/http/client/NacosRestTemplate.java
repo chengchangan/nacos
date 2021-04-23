@@ -468,6 +468,13 @@ public class NacosRestTemplate extends AbstractNacosRestTemplate {
         return interceptors;
     }
 
+    /**
+     * 说明：
+     *  1、模板方法最终执行的地方
+     *  2、使用 Request 的 execute() 进行发起请求
+     *  3、获取响应处理器，进行结果处理
+     *
+     */
     @SuppressWarnings("unchecked")
     private <T> HttpRestResult<T> execute(String url, String httpMethod, RequestHttpEntity requestEntity,
                                           Type responseType) throws Exception {

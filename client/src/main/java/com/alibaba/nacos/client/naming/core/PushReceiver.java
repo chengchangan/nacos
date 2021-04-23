@@ -33,6 +33,13 @@ import java.util.concurrent.ThreadFactory;
 import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 
 /**
+ * 关键逻辑：
+ *    说明：
+ *      接收远程推送过来的 ServiceInfo
+ *      保存 ServiceInfo信息
+ *      然后返回对方信息　ack
+ *
+ *
  * Push receiver.
  *
  * @author xuanyin
@@ -71,6 +78,13 @@ public class PushReceiver implements Runnable, Closeable {
         }
     }
 
+    /**
+     * TODO：这个　DatagramSocket　不太清楚，应该是监听读取信息
+     *
+     * 1、通过　DatagramSocket　接收到的信息正确，则读取信息解析然后放到，serviceInfoMap中(这个里面存放了，服务对应的服务信息)
+     * 2、给对方返回 ack确认信息
+     *
+     */
     @Override
     public void run() {
         while (!closed) {
@@ -80,6 +94,7 @@ public class PushReceiver implements Runnable, Closeable {
                 byte[] buffer = new byte[UDP_MSS];
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
 
+                // 关键逻辑：接收数据包，下面会进行解析内容
                 udpSocket.receive(packet);
 
                 String json = new String(IoUtils.tryDecompress(packet.getData()), UTF_8).trim();
@@ -87,7 +102,9 @@ public class PushReceiver implements Runnable, Closeable {
 
                 PushPacket pushPacket = JacksonUtils.toObj(json, PushPacket.class);
                 String ack;
+                // 关键逻辑：判断收到的数据是否有效，如果正确则存起来，然后返回信息给发送者
                 if ("dom".equals(pushPacket.type) || "service".equals(pushPacket.type)) {
+                    // 关键逻辑：解析 并 保存 ServiceInfo
                     hostReactor.processServiceJson(pushPacket.data);
 
                     // send ack to server
@@ -103,7 +120,7 @@ public class PushReceiver implements Runnable, Closeable {
                     ack = "{\"type\": \"unknown-ack\"" + ", \"lastRefTime\":\"" + pushPacket.lastRefTime
                         + "\", \"data\":" + "\"\"}";
                 }
-
+                // 关键逻辑：返回信息给发送者（Server端）
                 udpSocket.send(new DatagramPacket(ack.getBytes(UTF_8), ack.getBytes(UTF_8).length,
                     packet.getSocketAddress()));
             } catch (Exception e) {

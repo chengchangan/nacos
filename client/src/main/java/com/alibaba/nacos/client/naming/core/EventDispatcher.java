@@ -50,12 +50,26 @@ public class EventDispatcher implements Closeable {
 
     private ExecutorService executor = null;
 
+    /**
+     * 待处理任务的队列
+     *
+     */
     private final BlockingQueue<ServiceInfo> changedServices = new LinkedBlockingQueue<ServiceInfo>();
 
+    /**
+     * 服务对应的监听器
+     *
+     *
+     */
     private final ConcurrentMap<String, List<EventListener>> observerMap = new ConcurrentHashMap<String, List<EventListener>>();
 
     private volatile boolean closed = false;
 
+    /**
+     * 1、初始化线程池（单线程，守护线程）
+     * 2、开启循环监听 [服务信息改动队列]
+     *
+     */
     public EventDispatcher() {
 
         this.executor = Executors.newSingleThreadExecutor(new ThreadFactory() {
@@ -72,6 +86,10 @@ public class EventDispatcher implements Closeable {
     }
 
     /**
+     *
+     *  1、根据服务信息，添加监听者
+     *  2、服务信息队列，增加改变的服务信息
+     *
      * Add listener.
      *
      * @param serviceInfo service info
@@ -118,6 +136,10 @@ public class EventDispatcher implements Closeable {
         }
     }
 
+    /**
+     * 是否已订阅／是否存在监听者
+     *
+     */
     public boolean isSubscribed(String serviceName, String clusters) {
         return observerMap.containsKey(ServiceInfo.getKey(serviceName, clusters));
     }
@@ -152,6 +174,13 @@ public class EventDispatcher implements Closeable {
         NAMING_LOGGER.info("{} do shutdown stop", className);
     }
 
+    /**
+     *
+     * 1、循环监听队列
+     * 2、根据服务信息，获取对应的监听者
+     * 3、执行监听者，监听的事件和逻辑
+     *
+     */
     private class Notifier implements Runnable {
 
         @Override

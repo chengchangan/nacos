@@ -42,8 +42,10 @@ public class DistroSyncChangeTask extends AbstractDistroExecuteTask {
         Loggers.DISTRO.info("[DISTRO-START] {}", toString());
         try {
             String type = getDistroKey().getResourceType();
+            // 从 datsStore 本地缓存取出，服务列表的数据，转换成 byte
             DistroData distroData = distroComponentHolder.findDataStorage(type).getDistroData(getDistroKey());
             distroData.setType(DataOperation.CHANGE);
+            // 发送数据到 目标服务节点 todo 待看细节逻辑
             boolean result = distroComponentHolder.findTransportAgent(type).syncData(distroData, getDistroKey().getTargetServer());
             if (!result) {
                 handleFailedTask();

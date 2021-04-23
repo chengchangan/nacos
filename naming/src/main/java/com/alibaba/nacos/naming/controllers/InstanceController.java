@@ -66,6 +66,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * 服务的注册　Server端处理器
+ *
+ *
  * Instance operation controller.
  *
  * @author nkorange
@@ -120,7 +123,7 @@ public class InstanceController {
             .optional(request, CommonParams.NAMESPACE_ID, Constants.DEFAULT_NAMESPACE_ID);
         final String serviceName = WebUtils.required(request, CommonParams.SERVICE_NAME);
         checkServiceNameFormat(serviceName);
-
+        // 从request中解析出 Instance
         final Instance instance = parseInstance(request);
 
         serviceManager.registerInstance(namespaceId, serviceName, instance);

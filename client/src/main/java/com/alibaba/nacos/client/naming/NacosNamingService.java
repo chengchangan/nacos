@@ -57,6 +57,9 @@ public class NacosNamingService implements NamingService {
      */
     private String namespace;
 
+    /**
+     * Nacos Server 集群中的一个server节点（后续根据这个节点获取整个集群实例的列表）
+     */
     private String endpoint;
 
     private String serverList;
@@ -92,9 +95,13 @@ public class NacosNamingService implements NamingService {
         initCacheDir();
         initLogName(properties);
 
+        // 事件分发器
         this.eventDispatcher = new EventDispatcher();
+        // 服务相关操作的api
         this.serverProxy = new NamingProxy(this.namespace, this.endpoint, this.serverList, properties);
+        // 心跳检测定时调度
         this.beatReactor = new BeatReactor(this.serverProxy, initClientBeatThreadCount(properties));
+        // 本地 对于服务信息的维护，包括：信息的备份和还原、本地缓存和远程Server信息的同步 及 维护等
         this.hostReactor = new HostReactor(this.eventDispatcher, this.serverProxy, beatReactor, this.cacheDir,
             isLoadCacheAtStart(properties), initPollingThreadCount(properties));
     }
@@ -129,6 +136,10 @@ public class NacosNamingService implements NamingService {
         return loadCacheAtStart;
     }
 
+    /**
+     * 设置终端地址
+     *  serverList 和 endpoint 同时存在时,优先 endpoint
+     */
     private void initServerAddr(Properties properties) {
         serverList = properties.getProperty(PropertyKeyConst.SERVER_ADDR);
         endpoint = InitUtils.initEndpoint(properties);
